@@ -18,7 +18,7 @@ data_dir = '/Users/benalexander/Downloads/Song datasets/spotify_million_playlist
 data_files = os.listdir(data_dir)
 data_files = sorted(data_files, key=lambda x: int(x.split(".")[2].split("-")[0]))
 
-data_files = data_files[:1] # Just using 1 file for now (small graph)
+data_files = data_files[:1] # TODO: Decide how many files to use
 
 G = snap.TUNGraph().New()
 

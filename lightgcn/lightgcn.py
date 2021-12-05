@@ -1,14 +1,16 @@
 import torch
 from torch_geometric.nn import MessagePassing
-from torch_geometric.utils import add_self_loops, degree
+from torch_geometric.utils import degree
+from utils import recall_at_k
 
 
 class GNN(torch.nn.Module):
-    def __init__(self, embedding_dim, num_nodes, num_layers):
+    def __init__(self, embedding_dim, num_nodes, num_playlists, num_layers):
         super(GNN, self).__init__()
 
         self.embedding_dim = embedding_dim
         self.num_nodes = num_nodes
+        self.num_playlists = num_playlists
         self.num_layers = num_layers
 
         self.embeddings = torch.nn.Embedding(num_embeddings=self.num_nodes, embedding_dim=self.embedding_dim)
@@ -53,16 +55,39 @@ class GNN(torch.nn.Module):
         pos_scores = self.predict_scores(data_pos.edge_index, final_embs)
         neg_scores = self.predict_scores(data_neg.edge_index, final_embs)
 
-        # Calculate loss
-        all_scores = torch.cat([pos_scores, neg_scores], dim=0)
-        all_labels = torch.cat([torch.ones(pos_scores.shape[0]), torch.zeros(neg_scores.shape[0])], dim=0)
-        loss_fn = torch.nn.BCELoss() # TODO: CHANGE TO BPR LOSS
-        loss = loss_fn(all_scores, all_labels)
-        
+        # # Calculate loss (binary cross-entropy)
+        # all_scores = torch.cat([pos_scores, neg_scores], dim=0)
+        # all_labels = torch.cat([torch.ones(pos_scores.shape[0]), torch.zeros(neg_scores.shape[0])], dim=0)
+        # loss_fn = torch.nn.BCELoss()
+        # loss = loss_fn(all_scores, all_labels)
+
+        # Calculate loss (more efficient approximation to BPR, similar to the one used in official LightGCN implementation at 
+        # https://github.com/gusye1234/LightGCN-PyTorch/blob/master/code/model.py#L202)
+        loss = -torch.log(self.sigmoid(pos_scores - neg_scores)).mean() # mean vs. sum
+
         # if epoch == 1000:
         #     import ipdb; ipdb.set_trace()
         return loss
 
+    def evaluation(self, data_mp, data_pos, k):
+        final_embs = self.gnn_propagation(data_mp.edge_index) # only run propagation on the message-passing edges
+
+        # Get embeddings of all unique playlists in batch
+        assert (torch.unique(data_pos.edge_index[0,:]) == torch.unique_consecutive(data_pos.edge_index[0,:]).sort()[0]).all()
+        unique_playlists = torch.unique_consecutive(data_pos.edge_index[0,:])
+        playlist_emb = final_embs[unique_playlists, :] # has shape [number of playlists in batch, 64]
+        
+        # Get embeddings of ALL songs
+        song_emb = final_embs[self.num_playlists:, :] # has shape [total number of songs in dataset, 64]
+
+        # All ratings (using dot product as the scoring function)
+        ratings = self.sigmoid(torch.matmul(playlist_emb, song_emb.t())) # has shape [number of playlists in batch, total number of songs in dataset]
+                                                                         # where entry i,j is the predicted rating of song j for playlist i
+        # Calculate recall@k. This will be a dictionary of playlist idx -> recall
+        result = recall_at_k(ratings.cpu(), k, self.num_playlists, data_pos.edge_index.cpu(), 
+                             unique_playlists.cpu(), data_mp.edge_index)
+        
+        return result
 
 
 class LightGCN(MessagePassing):

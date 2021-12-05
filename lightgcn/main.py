@@ -1,8 +1,7 @@
 import torch
-from torch.functional import unique
+import numpy as np
 from lightgcn import GNN
 from torch_geometric.loader import DataLoader
-from torch_geometric.utils import degree
 from torch_geometric import seed_everything
 from torch_geometric.transforms import RandomLinkSplit
 from torch_geometric.data import Data, Dataset
@@ -36,7 +35,7 @@ def train(model, data_mp, loader, opt, num_playlists, num_nodes, epoch):
     total_examples=0
     model.train()
     for batch in loader:
-        del batch.batch; del batch.ptr # delete unnecessary attributes
+        del batch.batch; del batch.ptr # delete unwanted attributes
         
         opt.zero_grad()
         negs = sample_negative_edges(batch, num_playlists, num_nodes)
@@ -51,21 +50,24 @@ def train(model, data_mp, loader, opt, num_playlists, num_nodes, epoch):
     avg_loss = total_loss / total_examples
     return avg_loss
 
-# def test(model, loader, num_playlists, epoch):
-#     total_loss = 0
-#     total_examples = 0
-#     model.eval()
-#     for batch in loader:
-#         edge_index_negs = sample_negative_edges(batch, num_playlists)
-#         loss = model.calc_loss(batch, edge_index_negs, epoch)
-        
-#         num_examples = batch.edge_index.shape[1]
-#         total_loss += loss.item() * num_examples
-#         total_examples += num_examples
-#     avg_loss = total_loss / total_examples
-#     return avg_loss
+def test(model, data_mp, loader, k):
+    model.eval()
+    all_recalls = {}
+    with torch.no_grad():
+        for batch in loader:
+            del batch.batch; del batch.ptr # delete unwanted attributes
+
+            recalls = model.evaluation(data_mp, batch, k)
+            for playlist_idx in recalls:
+                assert playlist_idx not in all_recalls
+            all_recalls.update(recalls)
+    recall_at_k = np.mean(list(all_recalls.values()))
+    return recall_at_k
+
 
 class PlainData(Data):
+    # Overriding the __inc__ method so that the DataLoader stops increasing indices unnecessarily.
+    # See here for more information: https://pytorch-geometric.readthedocs.io/en/latest/notes/batching.html
     def __inc__(self, key, value, *args, **kwargs):
         return 0
 
@@ -90,7 +92,7 @@ class SpotifyDataset(Dataset):
 
 if __name__ == "__main__":
     # Load data object
-    data = torch.load("data_object")
+    data = torch.load("../preprocessing/data_object")
     data.edge_index = data.edge_index.to(torch.int64)
 
     # Train/val/test split
@@ -116,21 +118,23 @@ if __name__ == "__main__":
     # zz=next(iter(val_loader))
     # import ipdb; ipdb.set_trace()
 
-    gnn = GNN(embedding_dim=64, num_nodes=data.num_nodes, num_layers=3)
+    epochs = 2000
+    num_playlists = 296 # 4515 #20833
+    num_nodes = 801 # 8867 #44469   same as data.num_nodes??
+    k = 25 # 300 # for recall@k
+    num_layers = 3
+
+    gnn = GNN(embedding_dim=64, num_nodes=data.num_nodes, num_playlists=num_playlists, num_layers=num_layers)
 
     opt = torch.optim.Adam(gnn.parameters(), lr=1e-3)
 
-    epochs = 2000
-    num_playlists = 296 #20833
-    num_nodes =  801 #44469
-
     for epoch in range(epochs):
         train_loss = train(gnn, train_mp, train_loader, opt, num_playlists, num_nodes, epoch)
-        # if epoch % 10 == 0:
-        #     val_loss = test(gnn, val_loader, num_playlists, epoch)
-        #     print(f"Epoch {epoch}: train loss={train_loss}, val_loss={val_loss}")
-        # else:
-        print(f"Epoch {epoch}: train loss={train_loss}")
+        if epoch % 10 == 0:
+            val_recall = test(gnn, val_mp, val_loader, k)
+            print(f"Epoch {epoch}: train loss={train_loss}, val_recall={val_recall}")
+        else:
+            print(f"Epoch {epoch}: train loss={train_loss}")
 
 
 
