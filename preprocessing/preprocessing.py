@@ -18,7 +18,7 @@ data_dir = '/Users/benalexander/Downloads/Song datasets/spotify_million_playlist
 data_files = os.listdir(data_dir)
 data_files = sorted(data_files, key=lambda x: int(x.split(".")[2].split("-")[0]))
 
-data_files = data_files[:1] # TODO: Decide how many files to use
+data_files = data_files[:10] # TODO: Decide how many files to use
 
 G = snap.TUNGraph().New()
 
@@ -59,7 +59,7 @@ print(f"Num nodes: {len([x for x in G.Nodes()])} ({num_pl_orig} playlists, {num_
 print(f"Num edges: {len([x for x in G.Edges()])}")
 print()
 
-K = 10
+K = 20
 kcore = G.GetKCore(K)
 
 num_pl_kcore = len([x for x in kcore.Nodes() if x.GetId() <= maxPlaylistPid])

@@ -30,7 +30,7 @@ def sample_negative_edges(batch, num_playlists, num_nodes):
     return Data(edge_index=edge_index_negs)
 
 
-def train(model, data_mp, loader, opt, num_playlists, num_nodes, epoch):
+def train(model, data_mp, loader, opt, num_playlists, num_nodes, epoch, device):
     total_loss = 0
     total_examples=0
     model.train()
@@ -39,6 +39,7 @@ def train(model, data_mp, loader, opt, num_playlists, num_nodes, epoch):
         
         opt.zero_grad()
         negs = sample_negative_edges(batch, num_playlists, num_nodes)
+        data_mp, batch, negs = data_mp.to(device), batch.to(device), negs.to(device)
         loss = model.calc_loss(data_mp, batch, negs, epoch)
         loss.backward()
         opt.step()
@@ -50,13 +51,14 @@ def train(model, data_mp, loader, opt, num_playlists, num_nodes, epoch):
     avg_loss = total_loss / total_examples
     return avg_loss
 
-def test(model, data_mp, loader, k):
+def test(model, data_mp, loader, k, device):
     model.eval()
     all_recalls = {}
     with torch.no_grad():
         for batch in loader:
             del batch.batch; del batch.ptr # delete unwanted attributes
 
+            data_mp, batch = data_mp.to(device), batch.to(device)
             recalls = model.evaluation(data_mp, batch, k)
             for playlist_idx in recalls:
                 assert playlist_idx not in all_recalls
@@ -112,26 +114,29 @@ if __name__ == "__main__":
     # test_ev = SpotifyDataset('temp', edge_index=test_split.edge_label_index)    
     # test_mp = Data(edge_index=test_split.edge_index)
 
-    train_loader = DataLoader(train_ev, batch_size=128, shuffle=True)
-    val_loader = DataLoader(val_ev, batch_size=128, shuffle=True)
+    epochs = 2000
+    num_playlists = 4515 # 296 #20833
+    num_nodes = 8867 # 801 #44469   same as data.num_nodes??
+    k = 150 # for recall@k
+    num_layers = 3
+    batch_size = 2048
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    train_loader = DataLoader(train_ev, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_ev, batch_size=batch_size, shuffle=True)
     # z=next(iter(train_loader))
     # zz=next(iter(val_loader))
     # import ipdb; ipdb.set_trace()
 
-    epochs = 2000
-    num_playlists = 296 # 4515 #20833
-    num_nodes = 801 # 8867 #44469   same as data.num_nodes??
-    k = 25 # 300 # for recall@k
-    num_layers = 3
-
-    gnn = GNN(embedding_dim=64, num_nodes=data.num_nodes, num_playlists=num_playlists, num_layers=num_layers)
+    gnn = GNN(embedding_dim=64, num_nodes=data.num_nodes, num_playlists=num_playlists, num_layers=num_layers).to(device)
 
     opt = torch.optim.Adam(gnn.parameters(), lr=1e-3)
 
     for epoch in range(epochs):
-        train_loss = train(gnn, train_mp, train_loader, opt, num_playlists, num_nodes, epoch)
+        train_loss = train(gnn, train_mp, train_loader, opt, num_playlists, num_nodes, epoch, device)
         if epoch % 10 == 0:
-            val_recall = test(gnn, val_mp, val_loader, k)
+            val_recall = test(gnn, val_mp, val_loader, k, device)
             print(f"Epoch {epoch}: train loss={train_loss}, val_recall={val_recall}")
         else:
             print(f"Epoch {epoch}: train loss={train_loss}")
