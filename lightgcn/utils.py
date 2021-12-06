@@ -16,8 +16,8 @@ def recall_at_k(all_ratings, k, num_playlists, ground_truth, unique_playlists, d
     """
     # We don't want to recommend songs that are already known to be in the playlist. 
     # Set those to a low rating so they won't be recommended
-    known_edges = torch.unique(torch.sort(data_mp, dim=0)[0], dim=1) # using unique() b/c data_mp is undirected so has duplicate edges 
-                                                                    # Sorting to get playlists in [0,:] and songs in [1,:]
+    known_edges = data_mp[:, data_mp[0,:] < num_playlists] # removing duplicate edges (since data_mp is undirected) 
+                                                            # and also gets all playlists to be in row 0 and all songs in row 1
     playlist_to_idx_in_batch = {playlist: i for i, playlist in enumerate(unique_playlists.tolist())}
     exclude_playlists = []
     exclude_songs = []
