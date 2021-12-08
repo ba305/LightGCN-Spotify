@@ -26,7 +26,7 @@ def recall_at_k(all_ratings, k, num_playlists, ground_truth, unique_playlists, d
    exclude_songs = []
    for i in range(known_edges.shape[1]):
       pl, song = known_edges[:,i].tolist()
-      if pl in playlist_to_idx_in_batch: # for metrics, ignore edges in data_mp that include playlists that are not in this batch
+      if pl in playlist_to_idx_in_batch: # don't need the edges in data_mp that are from playlists that are not in this batch
          exclude_playlists.append(playlist_to_idx_in_batch[pl])
          exclude_songs.append(song - num_playlists) # subtract num_playlists to get indexing into all_ratings correct
    all_ratings[exclude_playlists, exclude_songs] = -10000 # setting to a very low score
@@ -35,7 +35,7 @@ def recall_at_k(all_ratings, k, num_playlists, ground_truth, unique_playlists, d
    _, top_k = torch.topk(all_ratings, k=k, dim=1)
    top_k += num_playlists # topk returned indices of songs in ratings, which doesn't include playlists. Need to shift up by num_playlists
     
-   # Calculate recall at k
+   # Calculate recall@k
    ret = {}
    for i, playlist in enumerate(unique_playlists):
       pos_songs = ground_truth[1, ground_truth[0, :] == playlist]
