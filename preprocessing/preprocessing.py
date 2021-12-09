@@ -157,6 +157,9 @@ data = Data(edge_index = edge_idx.t().contiguous(), num_nodes=kcore.GetNodes())
 
 # Save Data object (used for training model), plus song/playlist info (used for post-training analysis)
 torch.save(data, os.path.join(save_dir, 'data_object.pt'))
+stats = {'num_playlists': num_pl_kcore, 'num_nodes': num_pl_kcore + num_song_kcore}
+with open(os.path.join(save_dir, 'dataset_stats.json'), 'w') as f:
+    json.dump(stats, f)
 with open(os.path.join(save_dir, 'playlist_info.json'), 'w') as f:
     json.dump(playlistInfo, f)
 with open(os.path.join(save_dir, 'song_info.json'), 'w') as f:
