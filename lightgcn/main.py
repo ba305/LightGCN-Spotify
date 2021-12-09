@@ -151,11 +151,11 @@ if __name__ == "__main__":
     test_mp = Data(edge_index=test_split.edge_index)
 
     # Training hyperparameters
-    epochs = 500       # number of training epochs
-    k = 150            # value of k for recall@k. It is important to set this to a reasonable value!
-    num_layers = 3     # number of LightGCN layers (i.e., number of hops to consider during propagation)
-    batch_size = 2048  # batch size. refers to the # of playlists in the batch (each playlist will also come with all of its edges)
-    embedding_dim = 64 # dimension to use for the playlist/song embeddings
+    epochs = 500         # number of training epochs
+    k = 150              # value of k for recall@k. It is important to set this to a reasonable value!
+    num_layers = 3       # number of LightGCN layers (i.e., number of hops to consider during propagation)
+    batch_size = 2048    # batch size. refers to the # of playlists in the batch (each playlist will also come with all of its edges)
+    embedding_dim = 64   # dimension to use for the playlist/song embeddings
     save_emb_dir = None  # path to save multi-scale embeddings during test(). If None, will not save any embeddings
 
     # Use GPU if available
@@ -188,12 +188,12 @@ if __name__ == "__main__":
             print(f"Epoch {epoch}: train loss={train_loss}")
 
 
-print()
+    print()
 
-# Print best validation recall@k value
-best_val_recall = max(all_val_recalls, key = lambda x: x[1])
-print(f"Best validation recall@k: {best_val_recall[1]} at epoch {best_val_recall[0]}")
+    # Print best validation recall@k value
+    best_val_recall = max(all_val_recalls, key = lambda x: x[1])
+    print(f"Best validation recall@k: {best_val_recall[1]} at epoch {best_val_recall[0]}")
 
-# Print final recall@k on test set
-test_recall = test(gnn, test_mp, test_loader, k, device, None, None)
-print(f"Test set recall@k: {test_recall}")
+    # Print final recall@k on test set
+    test_recall = test(gnn, test_mp, test_loader, k, device, None, None)
+    print(f"Test set recall@k: {test_recall}")
