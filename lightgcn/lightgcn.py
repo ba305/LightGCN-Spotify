@@ -149,14 +149,11 @@ class LightGCN(MessagePassing):
         Performs the LightGCN message passing/aggregation/update to get updated node embeddings
 
         args:
-          x: current embeddings
-          edge_index: message passing edges
+          x: current embeddings (shape: [N, emb_dim])
+          edge_index: message passing edges (shape: [2, E])
         returns:
           updated embeddings
         """
-        # x has shape [N, input_dim]
-        # edge_index has shape [2, E]
-
         # Computing node degrees for normalization term in LightGCN (see LightGCN paper for details on this normalization term)
         row, col = edge_index
         deg = degree(col)
@@ -172,11 +169,10 @@ class LightGCN(MessagePassing):
         Specifies how to perform message passing during GNN propagation. For LightGCN, we simply pass along each
         source node's embedding to the target node, normalized by the normalization term for that node.
         args:
-          x_j: node embeddings of the source nodes, which will be passed to the target node
-          norm: the normalization term we calculated in forward() and passed into propagate()
+          x_j: node embeddings of the source nodes, which will be passed to the target node (shape: [E, emb_dim])
+          norm: the normalization terms we calculated in forward() and passed into propagate()
         returns:
           
         """
-        # x_j has shape [E, out_dim]
         # Here we are just multiplying the x_j's by the normalization terms (using some broadcasting)
         return norm.view(-1, 1) * x_j
