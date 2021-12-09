@@ -71,7 +71,7 @@ class GNN(torch.nn.Module):
         scores = self.sigmoid(scores)
         return scores
 
-    def calc_loss(self, data_mp, data_pos, data_neg, epoch):
+    def calc_loss(self, data_mp, data_pos, data_neg):
         """
         The main training step. Performs GNN propagation on message passing edges, to get multi-scale embeddings.
         Then predicts scores for each training example, and calculates Bayesian Personalized Ranking (BPR) loss.

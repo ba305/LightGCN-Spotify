@@ -1,5 +1,21 @@
 import torch
 import numpy as np
+from torch_geometric.data import Data
+
+
+def sample_negative_edges(batch, num_playlists, num_nodes):
+    # Randomly samples songs for each playlist. Doesn't currently check if they are true negatives, since that is
+    # computationally expensive. This is fine in our case, because we will never be sampling more than ~100
+    # songs for a playlist (out of thousands of songs), so although we will accidentally sample some positive songs,
+    # it will be an acceptably small number. However, if that is not the case for your dataset, please consider
+    # sampling true negatives only.
+    negs = []
+    for i in batch.edge_index[0,:]: # will all be playlists
+        assert i < num_playlists
+        rand = torch.randint(num_playlists, num_nodes, (1,))
+        negs.append(rand.item())
+    edge_index_negs = torch.row_stack([batch.edge_index[0,:], torch.LongTensor(negs)])
+    return Data(edge_index=edge_index_negs)
 
 
 def recall_at_k(all_ratings, k, num_playlists, ground_truth, unique_playlists, data_mp):
