@@ -1,5 +1,7 @@
 import torch
 import numpy as np
+import os
+import json
 from lightgcn import GNN
 from torch_geometric.loader import DataLoader
 from torch_geometric import seed_everything
@@ -12,21 +14,13 @@ seed_everything(5)
 
 
 def sample_negative_edges(batch, num_playlists, num_nodes):
-    # Right now not checking if they are really true negatives
+    # Randomly samples songs for each playlist. Doesn't currently check if they are true negatives
     negs = []
     for i in batch.edge_index[0,:]: # will all be playlists
         assert i < num_playlists
         rand = torch.randint(num_playlists, num_nodes, (1,))
         negs.append(rand.item())
     edge_index_negs = torch.row_stack([batch.edge_index[0,:], torch.LongTensor(negs)])
-
-    # # Error-checking to make sure each playlist's random negatives are songs
-    # for i in range(edge_index_negs.shape[1]):
-    #     pair = edge_index_negs[:,i].tolist()
-    #     if pair[0] < num_playlists:
-    #         assert pair[1] >= num_playlists
-    #     else:
-    #         assert pair[1] < num_playlists
     return Data(edge_index=edge_index_negs)
 
 
@@ -51,14 +45,21 @@ def train(model, data_mp, loader, opt, num_playlists, num_nodes, epoch, device):
     avg_loss = total_loss / total_examples
     return avg_loss
 
-def test(model, data_mp, loader, k, device):
+def test(model, data_mp, loader, k, device, save_dir, epoch):
     model.eval()
     all_recalls = {}
     with torch.no_grad():
+        # Save multi-scale embeddings if save_dir is not None
+        data_mp = data_mp.to(device)
+        if save_dir is not None:
+            embs_to_save = gnn.gnn_propagation(data_mp.edge_index)
+            torch.save(embs_to_save, os.path.join(save_dir, f"embeddings_epoch_{epoch}.pt"))
+
+        # Run evaluation
         for batch in loader:
             del batch.batch; del batch.ptr # delete unwanted attributes
 
-            data_mp, batch = data_mp.to(device), batch.to(device)
+            batch = batch.to(device)
             recalls = model.evaluation(data_mp, batch, k)
             for playlist_idx in recalls:
                 assert playlist_idx not in all_recalls
@@ -93,9 +94,12 @@ class SpotifyDataset(Dataset):
 
 
 if __name__ == "__main__":
-    # Load data object
-    data = torch.load("../preprocessing/data_object")
-    data.edge_index = data.edge_index.to(torch.int64)
+    # Load data
+    base_dir = "../data/dataset_small"
+    data = torch.load(os.path.join(base_dir, "data_object.pt"))
+    with open(os.path.join(base_dir, "dataset_stats.json"), 'r') as f:
+        stats = json.load(f)
+    num_playlists, num_nodes = stats["num_playlists"], stats["num_nodes"]
 
     # Train/val/test split
     transform = RandomLinkSplit(is_undirected=True, add_negative_train_samples=False, neg_sampling_ratio=0)
@@ -111,12 +115,10 @@ if __name__ == "__main__":
     val_ev = SpotifyDataset('temp', edge_index=val_split.edge_label_index)
     val_mp = Data(edge_index=val_split.edge_index)
 
-    # test_ev = SpotifyDataset('temp', edge_index=test_split.edge_label_index)    
-    # test_mp = Data(edge_index=test_split.edge_index)
+    test_ev = SpotifyDataset('temp', edge_index=test_split.edge_label_index)    
+    test_mp = Data(edge_index=test_split.edge_index)
 
-    epochs = 2000
-    num_playlists = 4515 # 296 #20833
-    num_nodes = 8867 # 801 #44469   same as data.num_nodes??
+    epochs = 500
     k = 150 # for recall@k
     num_layers = 3
     batch_size = 2048
@@ -124,23 +126,32 @@ if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     train_loader = DataLoader(train_ev, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_ev, batch_size=batch_size, shuffle=True)
-    # z=next(iter(train_loader))
-    # zz=next(iter(val_loader))
-    # import ipdb; ipdb.set_trace()
+    val_loader = DataLoader(val_ev, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_ev, batch_size=batch_size, shuffle=False)
 
     gnn = GNN(embedding_dim=64, num_nodes=data.num_nodes, num_playlists=num_playlists, num_layers=num_layers).to(device)
 
     opt = torch.optim.Adam(gnn.parameters(), lr=1e-3)
 
+    save_embeddings_dir = None
+
+    all_train_losses = [] # list of (epoch, training loss)
+    all_val_recalls = []  # list of (epoch, validation recall@k)
     for epoch in range(epochs):
         train_loss = train(gnn, train_mp, train_loader, opt, num_playlists, num_nodes, epoch, device)
-        if epoch % 10 == 0:
-            val_recall = test(gnn, val_mp, val_loader, k, device)
+        all_train_losses.append((epoch, train_loss))
+        if epoch % 5 == 0:
+            val_recall = test(gnn, val_mp, val_loader, k, device, save_embeddings_dir, epoch)
+            all_val_recalls.append((epoch, val_recall))
             print(f"Epoch {epoch}: train loss={train_loss}, val_recall={val_recall}")
         else:
             print(f"Epoch {epoch}: train loss={train_loss}")
 
 
+print()
 
-# import ipdb; ipdb.set_trace()
+best_val_recall = max(all_val_recalls, key = lambda x: x[1])
+print(f"Best validation recall@k: {best_val_recall[1]} at epoch {best_val_recall[0]}")
+
+test_recall = test(gnn, test_mp, test_loader, k, device, None, None)
+print(f"Test set recall@k: {test_recall}")

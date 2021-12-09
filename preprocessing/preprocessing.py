@@ -31,9 +31,9 @@ np.random.seed(5)
 
 ##### SET THESE VALUES BEFORE RUNNING
 data_dir = '/Users/benalexander/Downloads/Song datasets/spotify_million_playlist_dataset/data' # path to Spotify dataset files
-NUM_FILES_TO_USE = 10 # will create dataset based on the first NUM_FILES_TO_USE files from the full dataset
+NUM_FILES_TO_USE = 30 # will create dataset based on the first NUM_FILES_TO_USE files from the full dataset
 save_dir = '.'        # directory to save the new dataset files after preprocessing
-K = 20                # value of K for the K-core graph
+K = 35                # value of K for the K-core graph
 
 
 # Read in data files from Spotify dataset
@@ -100,13 +100,16 @@ print()
 
 # Get K-Core subgraph
 kcore = G.GetKCore(K)
+if kcore.Empty():
+    raise Exception(f"No Core exists for K={K}")
 
 # Print the same stats as above, but after calculating K-core subgraph
 num_pl_kcore = len([x for x in kcore.Nodes() if x.GetId() <= maxPlaylistPid])
 num_song_kcore = len([x for x in kcore.Nodes() if x.GetId() > maxPlaylistPid])
 print(f"K-core graph with K={K}:")
 print(f"Num nodes: {len([x for x in kcore.Nodes()])} ({num_pl_kcore} playlists, {num_song_kcore} unique songs)")
-print(f"Num edges: {len([x for x in kcore.Edges()])} (undirected)")
+kcore_num_edges = len([x for x in kcore.Edges()])
+print(f"Num edges: {kcore_num_edges} (undirected)")
 
 
 # Need to re-index new graph to have nodes in continuous sequence. After finding the K-core, we will have lost a lot of
@@ -151,13 +154,14 @@ for EI in tqdm(kcore.Edges()):
     edge_info = [oldToNewId_playlist[EI.GetSrcNId()], oldToNewId_song[EI.GetDstNId()]] # using new node IDs instead of old ones
     all_edges.append(edge_info)
     all_edges.append(edge_info[::-1]) # also add the edge in the opposite direction b/c undirected
-edge_idx = torch.Tensor(all_edges)
+edge_idx = torch.LongTensor(all_edges)
 
 data = Data(edge_index = edge_idx.t().contiguous(), num_nodes=kcore.GetNodes())
 
-# Save Data object (used for training model), plus song/playlist info (used for post-training analysis)
+# Save Data object (for training model), some dataset stats/metadata, and song/playlist info (used for post-training analysis)
 torch.save(data, os.path.join(save_dir, 'data_object.pt'))
-stats = {'num_playlists': num_pl_kcore, 'num_nodes': num_pl_kcore + num_song_kcore}
+stats = {'num_playlists': num_pl_kcore, 'num_nodes': num_pl_kcore + num_song_kcore, 'kcore_value_k': K,
+         'num_spotify_files_used': NUM_FILES_TO_USE, 'num_edges_directed': 2*kcore_num_edges, 'num_edges_undirected': kcore_num_edges}
 with open(os.path.join(save_dir, 'dataset_stats.json'), 'w') as f:
     json.dump(stats, f)
 with open(os.path.join(save_dir, 'playlist_info.json'), 'w') as f:
