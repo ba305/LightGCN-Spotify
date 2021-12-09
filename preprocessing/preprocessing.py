@@ -70,14 +70,12 @@ for data_file in data_files:
         d = json.load(f)['playlists']
         for playlist in d:
             # plalistInfo will just store some info about the playlist so we can perform analysis later (after training)
-            playlistInfo[playlist['pid']] = {'name': playlist['name'], 'songs': []}
+            playlistInfo[playlist['pid']] = {'name': playlist['name']}
 
             # Loop through songs. Add new node for a song if it doesn't already have one in G. Add playlist-song edges as well.
             for song in playlist['tracks']:
                 track_uri, track_name = song['track_uri'], song['track_name']
                 artist_name, artist_uri = song['artist_name'], song['artist_uri']
-
-                playlistInfo[playlist['pid']]['songs'].append((track_uri, track_name, artist_uri, artist_name)) # for post-training analysis
 
                 # First time seeing this song. Add a new node to the graph
                 if track_uri not in songToId:
