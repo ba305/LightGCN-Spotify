@@ -132,7 +132,8 @@ if __name__ == "__main__":
     # Train/val/test split. Need to specify is_undirected=True so that it knows to avoid data leakage from 
     # reverse edges (e.g., [4,5] and [5,4] should stay in the same split since they are basically the same edge).
     # Also set add_negative_train_samples=False and neg_sampling_ratio=0 since we have our own negative sampling implementation.
-    transform = RandomLinkSplit(is_undirected=True, add_negative_train_samples=False, neg_sampling_ratio=0)
+    transform = RandomLinkSplit(is_undirected=True, add_negative_train_samples=False, neg_sampling_ratio=0,
+                                num_val=0.15, num_test=0.15)
     train_split, val_split, test_split = transform(data)
     # Confirm that every node appears in every set above
     assert train_split.num_nodes == val_split.num_nodes and train_split.num_nodes == test_split.num_nodes
