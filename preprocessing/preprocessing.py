@@ -54,7 +54,7 @@ for data_file in data_files:
 # Playlists so far will have indices from 0...num_playlists-1. We will start indexing the songs from num_playlists
 # onwards. Thus, later on, if we know num_playlists, we can easily identify if a node is a playlist or song based on
 # whether its index is < or >= num_playlists
-maxPlaylistPid = max([x.GetId() for x in G.Nodes()]) # will start song IDs after this ID
+maxPlaylistPid = max([x.GetId() for x in G.Nodes()])     # will start song IDs after this ID
 assert maxPlaylistPid == len([x for x in G.Nodes()]) - 1 # checks that the sorting of files name above was correct.
                                                          # otherwise this will fail because we read in the pid's in wrong order
 

@@ -17,11 +17,11 @@ from utils import sample_negative_edges
 
 def train(model, data_mp, loader, opt, num_playlists, num_nodes, device):
     """
-    Main training function
+    Main training loop
 
     args:
        model: the GNN model
-       data_mp: message passing edges to use for calculating multi-scale embeddings
+       data_mp: message passing edges to use for performing propagation/calculating multi-scale embeddings
        loader: DataLoader that loads in batches of supervision/evaluation edges
        opt: the optimizer
        num_playlists: the number of playlists in the entire dataset
@@ -31,19 +31,19 @@ def train(model, data_mp, loader, opt, num_playlists, num_nodes, device):
        the training loss for this epoch
     """
     total_loss = 0
-    total_examples=0
+    total_examples = 0
     model.train()
     for batch in loader:
         del batch.batch; del batch.ptr # delete unwanted attributes
         
         opt.zero_grad()
-        negs = sample_negative_edges(batch, num_playlists, num_nodes)
+        negs = sample_negative_edges(batch, num_playlists, num_nodes)  # sample negative edges
         data_mp, batch, negs = data_mp.to(device), batch.to(device), negs.to(device)
         loss = model.calc_loss(data_mp, batch, negs)
         loss.backward()
         opt.step()
 
-        num_examples = batch.edge_index.shape[1] # maybe it should be 2x this because of negatives
+        num_examples = batch.edge_index.shape[1]
         total_loss += loss.item() * num_examples
         total_examples += num_examples
     avg_loss = total_loss / total_examples
@@ -51,11 +51,11 @@ def train(model, data_mp, loader, opt, num_playlists, num_nodes, device):
 
 def test(model, data_mp, loader, k, device, save_dir, epoch):
     """
-    Runs evaluation during validation/testing.
+    Evaluation loop for validation/testing.
 
     args:
        model: the GNN model
-       data_mp: message passing edges to use for calculating multi-scale embeddings
+       data_mp: message passing edges to use for propagation/calculating multi-scale embeddings
        loader: DataLoader that loads in batches of evaluation (i.e., validation or test) edges
        k: value of k to use for recall@k
        device: whether to use CPU or GPU
@@ -105,7 +105,7 @@ class SpotifyDataset(Dataset):
     """
     def __init__(self, root, edge_index, transform=None, pre_transform=None):
         self.edge_index = edge_index
-        self.unique_idxs = torch.unique(edge_index[0,:]).tolist() # playlists will all be in 0 row, songs will be in 1, b/c sorted by RandLinkSplit
+        self.unique_idxs = torch.unique(edge_index[0,:]).tolist() # playlists will all be in row 0, b/c sorted by RandLinkSplit
         self.num_nodes = len(self.unique_idxs)
         super().__init__(root, transform, pre_transform)
 
@@ -123,13 +123,13 @@ if __name__ == "__main__":
     seed_everything(5)
 
     # Load data
-    base_dir = "../data/dataset_small"
+    base_dir = "../data/dataset_large"
     data = torch.load(os.path.join(base_dir, "data_object.pt"))
     with open(os.path.join(base_dir, "dataset_stats.json"), 'r') as f:
         stats = json.load(f)
     num_playlists, num_nodes = stats["num_playlists"], stats["num_nodes"]
 
-    # Train/val/test split. Need to specify is_undirected=True so that it knows to avoid data leakage from 
+    # Train/val/test split (70-15-15). Need to specify is_undirected=True so that it knows to avoid data leakage from 
     # reverse edges (e.g., [4,5] and [5,4] should stay in the same split since they are basically the same edge).
     # Also set add_negative_train_samples=False and neg_sampling_ratio=0 since we have our own negative sampling implementation.
     transform = RandomLinkSplit(is_undirected=True, add_negative_train_samples=False, neg_sampling_ratio=0,
@@ -138,10 +138,9 @@ if __name__ == "__main__":
     # Confirm that every node appears in every set above
     assert train_split.num_nodes == val_split.num_nodes and train_split.num_nodes == test_split.num_nodes
 
-    # For each of train/val/test splits, we will have a set of message passing edges (used for GNN propagation and to get
-    # the final multi-scale node embeddings), and also a set of evaluation edges (used to calculate loss/performance metrics).
-    # For message passing edges, we can just store these in a Data object. For evaluation edges, we will put them in a
-    # SpotifyDataset object so that we can load them in in batches with a DataLoader.
+    # For each split, we have a set of message passing edges (for GNN propagation/getting final multi-scale node embeddings),
+    # and also a set of evaluation edges (used to calculate loss/performance metrics). For message passing edges, store in
+    # Data object. For eval edges, put them in a SpotifyDataset object so we can load them in in batches with a DataLoader.
     train_ev = SpotifyDataset('temp', edge_index=train_split.edge_label_index)
     train_mp = Data(edge_index=train_split.edge_index)
 
@@ -153,15 +152,14 @@ if __name__ == "__main__":
 
     # Training hyperparameters
     epochs = 500         # number of training epochs
-    k = 150              # value of k for recall@k. It is important to set this to a reasonable value!
+    k = 250              # value of k for recall@k. It is important to set this to a reasonable value!
     num_layers = 3       # number of LightGCN layers (i.e., number of hops to consider during propagation)
-    batch_size = 2048    # batch size. refers to the # of playlists in the batch (each playlist will also come with all of its edges)
+    batch_size = 2048    # batch size. refers to the # of playlists in the batch (each will come with all of its edges)
     embedding_dim = 64   # dimension to use for the playlist/song embeddings
     save_emb_dir = None  # path to save multi-scale embeddings during test(). If None, will not save any embeddings
 
     # Use GPU if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 
     # Create DataLoaders for the supervision/evaluation edges (one each for train/val/test sets)
     train_loader = DataLoader(train_ev, batch_size=batch_size, shuffle=True)

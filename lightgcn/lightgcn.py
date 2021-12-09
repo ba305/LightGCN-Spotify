@@ -1,3 +1,7 @@
+"""
+Defines the architecture of the full LightGCN model.
+"""
+
 import torch
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import degree
@@ -13,10 +17,12 @@ class GNN(torch.nn.Module):
         super(GNN, self).__init__()
 
         self.embedding_dim = embedding_dim
-        self.num_nodes = num_nodes # total number of nodes (songs + playlists) in dataset
+        self.num_nodes = num_nodes         # total number of nodes (songs + playlists) in dataset
         self.num_playlists = num_playlists # total number of playlists in dataset
         self.num_layers = num_layers
 
+        # Initialize embeddings for all playlists and songs. Playlists will have indices from 0...num_playlists-1,
+        # songs will have indices from num_playlists...num_nodes-1
         self.embeddings = torch.nn.Embedding(num_embeddings=self.num_nodes, embedding_dim=self.embedding_dim)
         torch.nn.init.normal_(self.embeddings.weight, std=0.1)
 
@@ -31,9 +37,9 @@ class GNN(torch.nn.Module):
 
     def gnn_propagation(self, edge_index_mp):
         """
-        Performs the linear embedding propagation (carried out by the LightGCN layers) and calculates final (multi-scale) embeddings
+        Performs the linear embedding propagation (using the LightGCN layers) and calculates final (multi-scale) embeddings
         for each user/item, which are calculated as a weighted sum of that user/item's embeddings at each layer (from
-        0 to self.num_layers). Technically, the weighted sum here is just the average, which is what the LightGCN authors use.
+        0 to self.num_layers). Technically, the weighted sum here is the average, which is what the LightGCN authors recommend.
 
         args:
           edge_index_mp: a tensor of all (undirected) edges in the graph, which is used for message passing/propagation and
@@ -42,17 +48,13 @@ class GNN(torch.nn.Module):
         returns:
           final multi-scale embeddings for all users/items
         """
-        x = self.embeddings.weight
-        # assert x.shape[0] == 801 # temporary
-        # assert x.shape[0] == data.num_nodes # make sure data and nn.Embedding have same nodes. 
-                                            # Otherwise may be issue with train/val/test split (each split should contain all nodes)
+        x = self.embeddings.weight        # layer-0 embeddings
 
-        # orig = x.clone()
-        x_at_each_layer = [x] # stores embeddings from each layer. Start with layer-0 embeddings
-        for i in range(self.num_layers): # now performing the GNN propagation
+        x_at_each_layer = [x]             # stores embeddings from each layer. Start with layer-0 embeddings
+        for i in range(self.num_layers):  # now performing the GNN propagation
             x = self.layers[i](x, edge_index_mp)
             x_at_each_layer.append(x)
-        final_embs = torch.stack(x_at_each_layer, dim=0).mean(dim=0) # multi-scale diffusion
+        final_embs = torch.stack(x_at_each_layer, dim=0).mean(dim=0) # take average to calculate multi-scale embeddings
         return final_embs
 
     def predict_scores(self, edge_index, embs):
@@ -61,8 +63,7 @@ class GNN(torch.nn.Module):
 
         args:
           edge_index: tensor of edges (between playlists and songs) whose scores we will calculate.
-          embs: node embeddings used to calculate predicted scores (should typically be the multi-scale embeddings calculated
-              by self.gnn_propagation())
+          embs: node embeddings for calculating predicted scores (typically the multi-scale embeddings from gnn_propagation())
         returns:
           predicted scores for each playlist/song pair in edge_index
         """
@@ -84,7 +85,7 @@ class GNN(torch.nn.Module):
           loss calculated on the positive/negative training edges
         """
         # Perform GNN propagation on message passing edges to get final embeddings
-        final_embs = self.gnn_propagation(data_mp.edge_index) # only run propagation on the message-passing edges
+        final_embs = self.gnn_propagation(data_mp.edge_index)
 
         # Get edge prediction scores for all positive and negative evaluation edges
         pos_scores = self.predict_scores(data_pos.edge_index, final_embs)
@@ -96,9 +97,9 @@ class GNN(torch.nn.Module):
         # loss_fn = torch.nn.BCELoss()
         # loss = loss_fn(all_scores, all_labels)
 
-        # Calculate loss (more efficient approximation to BPR, similar to the one used in official LightGCN implementation at 
-        # https://github.com/gusye1234/LightGCN-PyTorch/blob/master/code/model.py#L202)
-        loss = -torch.log(self.sigmoid(pos_scores - neg_scores)).mean() # mean vs. sum
+        # Calculate loss (using variation of Bayseian Personalized Ranking loss, similar to the one used in official
+        # LightGCN implementation at https://github.com/gusye1234/LightGCN-PyTorch/blob/master/code/model.py#L202)
+        loss = -torch.log(self.sigmoid(pos_scores - neg_scores)).mean()
         return loss
 
     def evaluation(self, data_mp, data_pos, k):
@@ -107,17 +108,15 @@ class GNN(torch.nn.Module):
 
         args:
           data_mp: message passing edges to use for propagation/calculating multi-scale embeddings
-          data_pos: positive edges to use for scoring metrics. There should be no overlap between these edges and the 
-            ones in data_mp
+          data_pos: positive edges to use for scoring metrics. Should be no overlap between these edges and data_mp's edges
           k: value of k to use for recall@k
         returns:
-          recall@k
+          dictionary mapping playlist ID -> recall@k on that playlist
         """
         # Run propagation on the message-passing edges to get multi-scale embeddings
         final_embs = self.gnn_propagation(data_mp.edge_index)
 
         # Get embeddings of all unique playlists in the batch of evaluation edges
-        assert (torch.unique(data_pos.edge_index[0,:]) == torch.unique_consecutive(data_pos.edge_index[0,:]).sort()[0]).all()
         unique_playlists = torch.unique_consecutive(data_pos.edge_index[0,:])
         playlist_emb = final_embs[unique_playlists, :] # has shape [number of playlists in batch, 64]
         
@@ -125,9 +124,9 @@ class GNN(torch.nn.Module):
         song_emb = final_embs[self.num_playlists:, :] # has shape [total number of songs in dataset, 64]
 
         # All ratings for each playlist in batch to each song in entire dataset (using dot product as the scoring function)
-        ratings = self.sigmoid(torch.matmul(playlist_emb, song_emb.t())) # has shape [number of playlists in batch, total number of songs in dataset]
-                                                                         # where entry i,j is the predicted rating of song j for playlist i
-        # Calculate recall@k. This will be a dictionary of playlist idx -> recall
+        ratings = self.sigmoid(torch.matmul(playlist_emb, song_emb.t())) # shape: [# playlists in batch, # songs in dataset]
+                                                                         # where entry i,j is rating of song j for playlist i
+        # Calculate recall@k
         result = recall_at_k(ratings.cpu(), k, self.num_playlists, data_pos.edge_index.cpu(), 
                              unique_playlists.cpu(), data_mp.edge_index.cpu())
         return result
@@ -138,37 +137,37 @@ class LightGCN(MessagePassing):
     A single LightGCN layer. Extends the MessagePassing class from PyTorch Geometric
     """
     def __init__(self):
-        super(LightGCN, self).__init__(aggr='add') # aggregation function  is defined here. can also write your own
-                                                   # by overriding self.aggregation()
-
-    def forward(self, x, edge_index):
-        """
-        Performs the LightGCN message passing/aggregation/update to get updated node embeddings
-
-        args:
-          x: current embeddings (shape: [N, emb_dim])
-          edge_index: message passing edges (shape: [2, E])
-        returns:
-          updated embeddings
-        """
-        # Computing node degrees for normalization term in LightGCN (see LightGCN paper for details on this normalization term)
-        row, col = edge_index
-        deg = degree(col)
-        deg_inv_sqrt = deg.pow(-0.5)
-        norm = deg_inv_sqrt[row] * deg_inv_sqrt[col]
-
-        # Begin propagation. Will perform message passing and aggregation (which is specified in the aggr parameter in __init__)
-        return self.propagate(edge_index, x=x, norm=norm)
+        super(LightGCN, self).__init__(aggr='add') # aggregation function is 'add
 
     def message(self, x_j, norm):
         """
         Specifies how to perform message passing during GNN propagation. For LightGCN, we simply pass along each
         source node's embedding to the target node, normalized by the normalization term for that node.
         args:
-          x_j: node embeddings of the source nodes, which will be passed to the target node (shape: [E, emb_dim])
+          x_j: node embeddings of the neighbor nodes, which will be passed to the central node (shape: [E, emb_dim])
           norm: the normalization terms we calculated in forward() and passed into propagate()
         returns:
-          
+          messages from neighboring nodes j to central node i
         """
         # Here we are just multiplying the x_j's by the normalization terms (using some broadcasting)
         return norm.view(-1, 1) * x_j
+
+    def forward(self, x, edge_index):
+        """
+        Performs the LightGCN message passing/aggregation/update to get updated node embeddings
+
+        args:
+          x: current node embeddings (shape: [N, emb_dim])
+          edge_index: message passing edges (shape: [2, E])
+        returns:
+          updated embeddings after this layer
+        """
+        # Computing node degrees for normalization term in LightGCN (see LightGCN paper for details on this normalization term)
+        # These will be used during message passing, to normalize each neighbor's embedding before passing it as a message
+        row, col = edge_index
+        deg = degree(col)
+        deg_inv_sqrt = deg.pow(-0.5)
+        norm = deg_inv_sqrt[row] * deg_inv_sqrt[col]
+
+        # Begin propagation. Will perform message passing and aggregation and return updated node embeddings.
+        return self.propagate(edge_index, x=x, norm=norm)

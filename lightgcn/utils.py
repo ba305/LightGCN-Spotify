@@ -8,11 +8,12 @@ def sample_negative_edges(batch, num_playlists, num_nodes):
     # computationally expensive. This is fine in our case, because we will never be sampling more than ~100
     # songs for a playlist (out of thousands of songs), so although we will accidentally sample some positive songs,
     # it will be an acceptably small number. However, if that is not the case for your dataset, please consider
-    # sampling true negatives only.
+    # sampling true negatives only. Here we sample 1 negative edge for each positive edge in the graph, so we will
+    # end up having a balanced 1:1 ratio of positive to negative edges.
     negs = []
-    for i in batch.edge_index[0,:]: # will all be playlists
-        assert i < num_playlists
-        rand = torch.randint(num_playlists, num_nodes, (1,))
+    for i in batch.edge_index[0,:]:  # looping over playlists
+        assert i < num_playlists     # just ensuring that i is a playlist
+        rand = torch.randint(num_playlists, num_nodes, (1,))  # randomly sample a song
         negs.append(rand.item())
     edge_index_negs = torch.row_stack([batch.edge_index[0,:], torch.LongTensor(negs)])
     return Data(edge_index=edge_index_negs)
@@ -26,7 +27,7 @@ def recall_at_k(all_ratings, k, num_playlists, ground_truth, unique_playlists, d
      all_ratings: array of shape [number of playlists in batch, number of songs in whole dataset]
      k: the value of k to use for recall@k
      num_playlists: the number of playlists in the dataset
-     ground_truth: array of shape [2, X] where each column is a pair of (playlist_idx, positive song). This is the
+     ground_truth: array of shape [2, X] where each column is a pair of (playlist_idx, positive song idx). This is the
         batch that we are calculating metrics on.
      unique_playlists: 1D vector of length [number of playlists in batch], which specifies which playlist corresponds
         to each row of all_ratings
@@ -57,9 +58,8 @@ def recall_at_k(all_ratings, k, num_playlists, ground_truth, unique_playlists, d
    ret = {}
    for i, playlist in enumerate(unique_playlists):
       pos_songs = ground_truth[1, ground_truth[0, :] == playlist]
-      assert len(pos_songs) > 0
 
-      k_recs = top_k[i, :] # top k recommendations for playlist i
+      k_recs = top_k[i, :] # top k recommendations for playlist
       recall = len(np.intersect1d(pos_songs, k_recs)) / len(pos_songs)
       ret[playlist] = recall
    return ret
