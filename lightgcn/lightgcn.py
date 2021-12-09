@@ -90,7 +90,7 @@ class GNN(torch.nn.Module):
         pos_scores = self.predict_scores(data_pos.edge_index, final_embs)
         neg_scores = self.predict_scores(data_neg.edge_index, final_embs)
 
-        # # Calculate loss (binary cross-entropy)
+        # # Calculate loss (binary cross-entropy). Commenting out, but can use instead of BPR if desired.
         # all_scores = torch.cat([pos_scores, neg_scores], dim=0)
         # all_labels = torch.cat([torch.ones(pos_scores.shape[0]), torch.zeros(neg_scores.shape[0])], dim=0)
         # loss_fn = torch.nn.BCELoss()
@@ -99,9 +99,6 @@ class GNN(torch.nn.Module):
         # Calculate loss (more efficient approximation to BPR, similar to the one used in official LightGCN implementation at 
         # https://github.com/gusye1234/LightGCN-PyTorch/blob/master/code/model.py#L202)
         loss = -torch.log(self.sigmoid(pos_scores - neg_scores)).mean() # mean vs. sum
-
-        # if epoch == 1000:
-        #     import ipdb; ipdb.set_trace()
         return loss
 
     def evaluation(self, data_mp, data_pos, k):
@@ -158,7 +155,6 @@ class LightGCN(MessagePassing):
         row, col = edge_index
         deg = degree(col)
         deg_inv_sqrt = deg.pow(-0.5)
-        # deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
         norm = deg_inv_sqrt[row] * deg_inv_sqrt[col]
 
         # Begin propagation. Will perform message passing and aggregation (which is specified in the aggr parameter in __init__)
