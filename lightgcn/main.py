@@ -99,7 +99,7 @@ class PlainData(Data):
 class SpotifyDataset(Dataset):
     """
     Dataset object containing the Spotify supervision/evaluation edges. This will be used by the DataLoader to load
-    batches of edges to calculate loss or evaluation metrics on. Here, get(idx) will return ALL edges of the graph
+    batches of edges to calculate loss or evaluation metrics on. Here, get(idx) will return ALL outgoing edges of the graph
     corresponding to playlist "idx." This is because when calculating metrics such as recall@k, we need all of the
     playlist's positive edges in the same batch.
     """
@@ -112,7 +112,7 @@ class SpotifyDataset(Dataset):
     def len(self):
         return self.num_nodes
 
-    def get(self, idx):
+    def get(self, idx): # returns all outgoing edges associated with playlist idx
         edge_index = self.edge_index[:, self.edge_index[0,:] == idx]
         return PlainData(edge_index=edge_index)
 
@@ -151,7 +151,7 @@ if __name__ == "__main__":
     test_mp = Data(edge_index=test_split.edge_index)
 
     # Training hyperparameters
-    epochs = 500         # number of training epochs
+    epochs = 300         # number of training epochs
     k = 250              # value of k for recall@k. It is important to set this to a reasonable value!
     num_layers = 3       # number of LightGCN layers (i.e., number of hops to consider during propagation)
     batch_size = 2048    # batch size. refers to the # of playlists in the batch (each will come with all of its edges)

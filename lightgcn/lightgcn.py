@@ -97,7 +97,7 @@ class GNN(torch.nn.Module):
         # loss_fn = torch.nn.BCELoss()
         # loss = loss_fn(all_scores, all_labels)
 
-        # Calculate loss (using variation of Bayseian Personalized Ranking loss, similar to the one used in official
+        # Calculate loss (using variation of Bayesian Personalized Ranking loss, similar to the one used in official
         # LightGCN implementation at https://github.com/gusye1234/LightGCN-PyTorch/blob/master/code/model.py#L202)
         loss = -torch.log(self.sigmoid(pos_scores - neg_scores)).mean()
         return loss
@@ -137,7 +137,7 @@ class LightGCN(MessagePassing):
     A single LightGCN layer. Extends the MessagePassing class from PyTorch Geometric
     """
     def __init__(self):
-        super(LightGCN, self).__init__(aggr='add') # aggregation function is 'add
+        super(LightGCN, self).__init__(aggr='add') # aggregation function is 'add'
 
     def message(self, x_j, norm):
         """
